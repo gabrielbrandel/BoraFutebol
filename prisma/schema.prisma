@@ -1,0 +1,420 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  User
+  Admin
+}
+
+enum PlayerPosition {
+  Goalkeeper
+  Defender
+  RightBack
+  LeftBack
+  DefensiveMidfielder
+  Midfielder
+  Forward
+}
+
+enum DominantFoot {
+  Right
+  Left
+  Both
+}
+
+enum FieldType {
+  Society
+  Field
+  Futsal
+}
+
+enum MatchStatus {
+  Open
+  Closed
+  Cancelled
+  Finished
+}
+
+enum AttendanceStatus {
+  Confirmed
+  Cancelled
+  Waitlist
+  Promoted
+}
+
+enum PaymentStatus {
+  Pending
+  Paid
+  Cancelled
+}
+
+enum PaymentMethod {
+  Pix
+  Cash
+  Card
+}
+
+enum NotificationType {
+  MatchReminder
+  ScheduleChange
+  Convocation
+  Cancellation
+  WaitlistPromotion
+  PaymentReminder
+}
+
+enum MedalType {
+  TenMatches
+  FiftyMatches
+  HundredMatches
+  TopScorer
+  Mvp
+  MostPresent
+  Quality
+}
+
+enum TeamSide {
+  TeamA
+  TeamB
+}
+
+model User {
+  id                 String         @id @default(uuid())
+  name               String
+  photoUrl           String?
+  birthDate          DateTime
+  phone              String
+  whatsApp           String
+  email              String         @unique
+  passwordHash       String
+  city               String         @default("")
+  state              String         @default("")
+  primaryPosition    PlayerPosition
+  dominantFoot       DominantFoot   @default(Right)
+  height             Decimal        @db.Decimal(5, 2)
+  weight             Decimal        @db.Decimal(5, 2)
+  technicalLevel     Int            @default(3)
+  role               UserRole       @default(User)
+  refreshToken       String?
+  refreshTokenExpiry DateTime?
+  isActive           Boolean        @default(true)
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  stats            PlayerStats?
+  attendances      MatchAttendance[]
+  payments         Payment[]
+  fieldRatings     FieldRating[]
+  refereeRatings   RefereeRating[]
+  messages         MatchMessage[]
+  mvpVotes         MvpVote[]        @relation("Voter")
+  medals           UserMedal[]
+  teamAssignments  MatchTeamAssignment[]
+  createdMatches   Match[]          @relation("CreatedBy")
+  mvpMatches       Match[]          @relation("MvpUser")
+  notifications    Notification[]
+  recurringCreated RecurringMatch[] @relation("RecurringCreatedBy")
+}
+
+model PlayerStats {
+  id              String  @id @default(uuid())
+  userId          String  @unique
+  matchesPlayed   Int     @default(0)
+  wins            Int     @default(0)
+  goals           Int     @default(0)
+  assists         Int     @default(0)
+  yellowCards     Int     @default(0)
+  redCards        Int     @default(0)
+  averageRating   Decimal @default(0) @db.Decimal(3, 2)
+  mvpCount        Int     @default(0)
+  attendanceCount Int     @default(0)
+  attendanceRate  Decimal @default(0) @db.Decimal(5, 2)
+  isActive        Boolean @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Field {
+  id              String    @id @default(uuid())
+  name            String
+  zipCode         String?
+  address         String
+  latitude        Float
+  longitude       Float
+  city            String
+  state           String
+  mainPhotoUrl    String?
+  galleryPhotos   String[]  @default([])
+  type            FieldType
+  maxPlayers      Int
+  pricePerPlayer  Decimal   @db.Decimal(10, 2)
+  hasLockerRoom   Boolean   @default(false)
+  hasBarbecue     Boolean   @default(false)
+  hasParking      Boolean   @default(false)
+  hasCoverage     Boolean   @default(false)
+  averageRating   Decimal   @default(0) @db.Decimal(3, 2)
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  matches   Match[]
+  ratings   FieldRating[]
+  recurring RecurringMatch[]
+}
+
+model Referee {
+  id              String   @id @default(uuid())
+  name            String
+  phone           String
+  whatsApp        String
+  photoUrl        String?
+  city            String   @default("")
+  pricePerMatch   Decimal  @default(0) @db.Decimal(10, 2)
+  averageRating   Decimal  @default(0) @db.Decimal(3, 2)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  matches   Match[]
+  ratings   RefereeRating[]
+  recurring RecurringMatch[]
+}
+
+model Goalkeeper {
+  id              String   @id @default(uuid())
+  name            String
+  city            String   @default("")
+  whatsApp        String
+  pricePerMatch   Decimal  @default(0) @db.Decimal(10, 2)
+  averageRating   Decimal  @default(0) @db.Decimal(3, 2)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  matches   Match[]
+  recurring RecurringMatch[]
+}
+
+model RecurringMatch {
+  id                String   @id @default(uuid())
+  fieldId           String
+  time              String
+  maxPlayers        Int
+  refereeId         String?
+  goalkeeperId      String?
+  participationFee  Decimal  @db.Decimal(10, 2)
+  notes             String?
+  daysOfWeek        String
+  createdById       String
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  field            Field @relation(fields: [fieldId], references: [id])
+  referee          Referee? @relation(fields: [refereeId], references: [id])
+  goalkeeper       Goalkeeper? @relation(fields: [goalkeeperId], references: [id])
+  createdBy        User @relation("RecurringCreatedBy", fields: [createdById], references: [id])
+  cancellations    RecurringMatchCancellation[]
+  generatedMatches Match[]
+}
+
+model RecurringMatchCancellation {
+  id                String   @id @default(uuid())
+  recurringMatchId  String
+  date              DateTime @db.Date
+  reason            String?
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  recurringMatch RecurringMatch @relation(fields: [recurringMatchId], references: [id], onDelete: Cascade)
+
+  @@unique([recurringMatchId, date])
+}
+
+model Match {
+  id                String      @id @default(uuid())
+  fieldId           String
+  date              DateTime    @db.Date
+  time              String
+  maxPlayers        Int
+  refereeId         String?
+  goalkeeperId      String?
+  participationFee  Decimal     @db.Decimal(10, 2)
+  notes             String?
+  status            MatchStatus @default(Open)
+  createdById       String
+  mvpUserId         String?
+  recurringMatchId  String?
+  isActive          Boolean     @default(true)
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  field            Field @relation(fields: [fieldId], references: [id])
+  referee          Referee? @relation(fields: [refereeId], references: [id])
+  goalkeeper       Goalkeeper? @relation(fields: [goalkeeperId], references: [id])
+  createdBy        User @relation("CreatedBy", fields: [createdById], references: [id])
+  mvpUser          User? @relation("MvpUser", fields: [mvpUserId], references: [id])
+  recurringMatch   RecurringMatch? @relation(fields: [recurringMatchId], references: [id])
+  attendances      MatchAttendance[]
+  payments         Payment[]
+  messages         MatchMessage[]
+  teamAssignments  MatchTeamAssignment[]
+  mvpVotes         MvpVote[]
+}
+
+model MatchAttendance {
+  id               String           @id @default(uuid())
+  matchId          String
+  userId           String
+  status           AttendanceStatus
+  waitlistPosition Int              @default(0)
+  wasPresent       Boolean          @default(false)
+  confirmedAt      DateTime?
+  isActive         Boolean          @default(true)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  match Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id])
+
+  @@unique([matchId, userId])
+}
+
+model MatchTeamAssignment {
+  id               String         @id @default(uuid())
+  matchId          String
+  userId           String
+  team             TeamSide
+  assignedPosition PlayerPosition
+  isActive         Boolean        @default(true)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  match Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id])
+}
+
+model Payment {
+  id        String         @id @default(uuid())
+  matchId   String
+  userId    String
+  amount    Decimal        @db.Decimal(10, 2)
+  status    PaymentStatus  @default(Pending)
+  method    PaymentMethod?
+  paidAt    DateTime?
+  notes     String?
+  isActive  Boolean        @default(true)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  match Match @relation(fields: [matchId], references: [id])
+  user  User  @relation(fields: [userId], references: [id])
+}
+
+model FieldRating {
+  id              String   @id @default(uuid())
+  fieldId         String
+  userId          String
+  matchId         String?
+  grassRating     Int
+  lightingRating  Int
+  structureRating Int
+  locationRating  Int
+  comment         String?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  field Field @relation(fields: [fieldId], references: [id])
+  user  User  @relation(fields: [userId], references: [id])
+}
+
+model RefereeRating {
+  id         String   @id @default(uuid())
+  refereeId  String
+  userId     String
+  matchId    String?
+  rating     Int
+  comment    String?
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  referee Referee @relation(fields: [refereeId], references: [id])
+  user    User    @relation(fields: [userId], references: [id])
+}
+
+model MatchMessage {
+  id        String   @id @default(uuid())
+  matchId   String
+  userId    String
+  content   String
+  photoUrl  String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  match Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id])
+}
+
+model MvpVote {
+  id           String   @id @default(uuid())
+  matchId      String
+  voterId      String
+  votedUserId  String
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  match     Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  voter     User  @relation("Voter", fields: [voterId], references: [id])
+
+  @@unique([matchId, voterId])
+}
+
+model Notification {
+  id              String           @id @default(uuid())
+  userId          String
+  type            NotificationType
+  title           String
+  message         String
+  isRead          Boolean          @default(false)
+  relatedMatchId  String?
+  sentAt          DateTime?
+  isActive        Boolean          @default(true)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model UserMedal {
+  id        String    @id @default(uuid())
+  userId    String
+  type      MedalType
+  earnedAt  DateTime  @default(now())
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model AppSettings {
+  id                       String   @id @default("00000000-0000-0000-0000-000000000001")
+  onlyAdminCanCreateFields Boolean  @default(true)
+  onlyAdminCanCreateMatches Boolean @default(true)
+  isActive                 Boolean  @default(true)
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+}
