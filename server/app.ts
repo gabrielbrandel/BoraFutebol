@@ -129,9 +129,9 @@ export function createApp() {
     const { page, pageSize, search } = parsePagination(q)
     const data = await matchService.getMatches({
       page, pageSize, search,
-      status: q.status ?? q.filter?.status,
-      city: q.city ?? q.filter?.city,
-      maxPrice: q.maxPrice ? Number(q.maxPrice) : q.filter?.maxPrice ? Number(q.filter.maxPrice) : undefined,
+      status: q.status,
+      city: q.city,
+      maxPrice: q.maxPrice ? Number(q.maxPrice) : undefined,
       maxDistanceKm: q.maxDistanceKm ? Number(q.maxDistanceKm) : undefined,
       userLatitude: q.userLatitude ? Number(q.userLatitude) : undefined,
       userLongitude: q.userLongitude ? Number(q.userLongitude) : undefined
