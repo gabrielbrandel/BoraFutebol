@@ -1,24 +1,27 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+defineOptions({ name: 'HomeView' })
+
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { matchesApi } from '@/services/endpoints'
 import type { Match } from '@/types'
 import { MATCH_STATUS_LABELS } from '@/types'
+import { useCachedQuery } from '@/composables/useCachedQuery'
 import Button from 'primevue/button'
 import ProgressSpinner from 'primevue/progressspinner'
+import RefreshIndicator from '@/components/RefreshIndicator.vue'
 
 const router = useRouter()
-const matches = ref<Match[]>([])
-const loading = ref(true)
 
-onMounted(async () => {
-  try {
-    const { data } = await matchesApi.getAll({ page: 1, pageSize: 6, status: 'Open' })
-    if (data.success) matches.value = data.data.items
-  } finally {
-    loading.value = false
+const { data, loading, refreshing } = useCachedQuery<Match[]>(
+  'home:upcoming-matches',
+  async () => {
+    const { data: res } = await matchesApi.getAll({ page: 1, pageSize: 6, status: 'Open' })
+    return res.success ? res.data.items : []
   }
-})
+)
+
+const matches = computed(() => data.value ?? [])
 
 function formatDate(date: string) {
   return new Date(date).toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: 'short' })
@@ -27,6 +30,7 @@ function formatDate(date: string) {
 
 <template>
   <div>
+    <RefreshIndicator :visible="refreshing" />
     <section class="hero">
       <div class="hero-content">
         <h1>Organize suas <span>peladas</span></h1>

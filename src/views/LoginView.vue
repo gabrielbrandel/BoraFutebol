@@ -29,8 +29,12 @@ async function handleLogin() {
       router.push(redirect || '/')
     }
   } catch (e: unknown) {
-    const err = e as { response?: { data?: { message?: string } } }
-    error.value = err.response?.data?.message || 'Erro ao fazer login'
+    const err = e as { response?: { data?: { message?: string } }; message?: string; code?: string }
+    if (!err.response) {
+      error.value = 'Não foi possível conectar à API. Verifique sua internet ou tente atualizar a página (Ctrl+Shift+R).'
+    } else {
+      error.value = err.response?.data?.message || 'Erro ao fazer login'
+    }
   } finally {
     loading.value = false
   }
@@ -55,8 +59,8 @@ async function handleLogin() {
 
       <form @submit.prevent="handleLogin" class="auth-form">
         <div class="field">
-          <label>WhatsApp</label>
-          <InputText v-model="whatsApp" placeholder="(44) 99999-9999" class="w-full" required />
+          <label>WhatsApp ou e-mail</label>
+          <InputText v-model="whatsApp" placeholder="(44) 99999-9999 ou admin@datesoccer.com" class="w-full" required />
         </div>
         <div class="field">
           <label>Senha</label>

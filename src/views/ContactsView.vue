@@ -1,4 +1,6 @@
 <script setup lang="ts">
+defineOptions({ name: 'ContactsView' })
+
 import { ref, watch, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
@@ -7,10 +9,12 @@ import type { Contact } from '@/types'
 import { POSITION_LABELS } from '@/types'
 import { whatsappLink, formatPhone } from '@/utils/whatsapp'
 import { useDebouncedWatch } from '@/composables/useDebouncedWatch'
+import { useCachedQuery } from '@/composables/useCachedQuery'
 import InputText from 'primevue/inputtext'
 import Button from 'primevue/button'
 import SelectButton from 'primevue/selectbutton'
 import ProgressSpinner from 'primevue/progressspinner'
+import RefreshIndicator from '@/components/RefreshIndicator.vue'
 import Avatar from 'primevue/avatar'
 import FilterChips from '@/components/FilterChips.vue'
 import FilterSheet from '@/components/FilterSheet.vue'
@@ -18,9 +22,7 @@ import type { FilterOption } from '@/components/FilterSheet.vue'
 
 const router = useRouter()
 const auth = useAuthStore()
-const contacts = ref<Contact[]>([])
 const cities = ref<string[]>([])
-const loading = ref(true)
 const search = ref('')
 const city = ref<string | null>(null)
 const type = ref('players')
@@ -41,6 +43,25 @@ const filterChips = computed(() => [
   { id: 'city', label: city.value || 'Cidade', value: city.value, icon: 'pi pi-map-marker' }
 ])
 
+const queryKey = computed(() => JSON.stringify({ type: type.value, search: search.value, city: city.value }))
+
+const { data, loading, refreshing, refresh } = useCachedQuery<Contact[]>(
+  () => `contacts:${queryKey.value}`,
+  async () => {
+    const { data: res } = await contactsApi.getAll({
+      type: type.value,
+      page: 1,
+      pageSize: 50,
+      search: search.value || undefined,
+      city: city.value || undefined
+    })
+    return res.success ? res.data.items : []
+  },
+  { enabled: () => auth.isAuthenticated }
+)
+
+const contacts = computed(() => data.value ?? [])
+
 async function loadCities() {
   try {
     const { data } = await contactsApi.getCities(type.value)
@@ -53,60 +74,43 @@ async function loadCities() {
   }
 }
 
-async function load() {
+onMounted(async () => {
   if (!auth.isAuthenticated) {
     router.push({ name: 'login', query: { redirect: '/contacts' } })
     return
   }
-  loading.value = true
-  try {
-    const { data } = await contactsApi.getAll({
-      type: type.value,
-      page: 1,
-      pageSize: 50,
-      search: search.value || undefined,
-      city: city.value || undefined
-    })
-    if (data.success) contacts.value = data.data.items
-  } finally {
-    loading.value = false
-  }
-}
-
-onMounted(async () => {
   await loadCities()
-  await load()
 })
 
 watch(type, async () => {
   city.value = null
   await loadCities()
-  await load()
 })
 
-useDebouncedWatch([search, city], load)
+useDebouncedWatch([search, city], () => refresh(false))
 
 function openWhatsApp(contact: Contact) {
   const msg = `Olá ${contact.name}, vi seu contato no DateSoccer!`
   window.open(whatsappLink(contact.whatsApp, msg), '_blank')
 }
 
-function typeLabel(t: string) {
-  return ({ Player: 'Jogador', Referee: 'Juíze', Goalkeeper: 'Goleiro' } as Record<string, string>)[t] || t
+function contactTypeLabel(value: string) {
+  return ({ Player: 'Jogador', Referee: 'Juiz', Goalkeeper: 'Goleiro' } as Record<string, string>)[value] || value
 }
 
-function detailLabel(c: Contact) {
-  if (c.type === 'Player') return POSITION_LABELS[c.detail || ''] || c.detail
-  return c.detail
+function contactDetail(contact: Contact) {
+  if (contact.type === 'Player') return POSITION_LABELS[contact.detail || ''] || contact.detail
+  return contact.detail
 }
 </script>
 
 <template>
   <div class="page-container contacts-page">
+    <RefreshIndicator :visible="refreshing" />
     <h1 class="page-title">Contatos</h1>
     <p class="page-subtitle">Toque no WhatsApp para falar</p>
 
-    <SelectButton v-model="type" :options="typeOptions" optionLabel="label" optionValue="value" class="type-filter" />
+    <SelectButton v-model="type" :options="typeOptions" option-label="label" option-value="value" class="type-filter" />
 
     <div class="search-inline">
       <i class="pi pi-search" />
@@ -126,21 +130,27 @@ function detailLabel(c: Contact) {
     <div v-if="loading" class="loading"><ProgressSpinner /></div>
 
     <div v-else-if="contacts.length" class="contact-list">
-      <div v-for="c in contacts" :key="c.id + c.type" class="contact-card">
-        <Avatar :label="c.name.charAt(0)" shape="circle" size="large" class="avatar" />
+      <div v-for="contact in contacts" :key="contact.id + contact.type" class="contact-card">
+        <Avatar :label="contact.name.charAt(0)" shape="circle" size="large" class="avatar" />
         <div class="info">
           <div class="name-row">
-            <strong>{{ c.name }}</strong>
-            <span class="badge">{{ typeLabel(c.type) }}</span>
+            <strong>{{ contact.name }}</strong>
+            <span class="badge">{{ contactTypeLabel(contact.type) }}</span>
           </div>
-          <span class="meta">{{ c.city }}{{ c.state ? `/${c.state}` : '' }}</span>
-          <span v-if="detailLabel(c)" class="meta">{{ detailLabel(c) }}</span>
-          <a class="whatsapp-row" :href="whatsappLink(c.whatsApp)" target="_blank" rel="noopener" @click.stop>
+          <span class="meta">{{ contact.city }}{{ contact.state ? `/${contact.state}` : '' }}</span>
+          <span v-if="contactDetail(contact)" class="meta">{{ contactDetail(contact) }}</span>
+          <a
+            class="whatsapp-row"
+            :href="whatsappLink(contact.whatsApp)"
+            target="_blank"
+            rel="noopener"
+            @click.stop
+          >
             <i class="pi pi-whatsapp" />
-            {{ formatPhone(c.whatsApp) }}
+            {{ formatPhone(contact.whatsApp) }}
           </a>
         </div>
-        <Button icon="pi pi-whatsapp" severity="success" rounded aria-label="WhatsApp" @click="openWhatsApp(c)" />
+        <Button icon="pi pi-whatsapp" severity="success" rounded aria-label="WhatsApp" @click="openWhatsApp(contact)" />
       </div>
     </div>
 
@@ -155,8 +165,9 @@ function detailLabel(c: Contact) {
 <style scoped lang="scss">
 .contacts-page { padding-bottom: 1rem; }
 .type-filter {
-  margin-bottom: 0.75rem; width: 100%;
-  :deep(.p-selectbutton) { display: flex; width: 100%; button { flex: 1; font-size: 0.8rem; } }
+  width: 100%;
+  margin-bottom: 0.75rem;
+  :deep(.p-selectbutton) { width: 100%; display: flex; button { flex: 1; font-size: 0.8rem; } }
 }
 .search-inline {
   display: flex; align-items: center; gap: 0.5rem;
@@ -168,19 +179,21 @@ function detailLabel(c: Contact) {
 .contact-list { display: flex; flex-direction: column; gap: 0.75rem; }
 .contact-card {
   display: flex; align-items: center; gap: 0.75rem;
-  background: var(--ds-surface); border: 1px solid var(--ds-border);
-  border-radius: 12px; padding: 0.875rem 1rem;
+  padding: 0.875rem 1rem; background: var(--ds-surface);
+  border: 1px solid var(--ds-border); border-radius: 12px;
 }
 .avatar { flex-shrink: 0; background: var(--ds-primary) !important; color: white !important; }
 .info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.15rem; }
 .name-row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
-.badge { font-size: 0.7rem; background: var(--ds-bg); padding: 0.15rem 0.5rem; border-radius: 999px; color: var(--ds-text-muted); }
+.badge { font-size: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 999px; background: var(--ds-bg); color: var(--ds-text-muted); }
 .meta { font-size: 0.8rem; color: var(--ds-text-muted); }
 .whatsapp-row {
   display: inline-flex; align-items: center; gap: 0.35rem;
-  color: #25d366; font-weight: 600; font-size: 0.95rem; margin-top: 0.25rem;
+  margin-top: 0.25rem; color: #25d366; font-weight: 600; font-size: 0.95rem;
   i { font-size: 1.1rem; }
 }
-.loading, .empty { text-align: center; padding: 3rem; color: var(--ds-text-muted); i { font-size: 3rem; display: block; margin-bottom: 1rem; } small { display: block; margin-top: 0.5rem; font-size: 0.8rem; } }
+.loading, .empty { text-align: center; padding: 3rem; color: var(--ds-text-muted); }
+.loading i, .empty i { font-size: 3rem; display: block; margin-bottom: 1rem; }
+.empty small { display: block; margin-top: 0.5rem; font-size: 0.8rem; }
 @media (max-width: 640px) { .page-subtitle { display: none; } }
 </style>

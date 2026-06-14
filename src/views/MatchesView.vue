@@ -1,4 +1,6 @@
 <script setup lang="ts">
+defineOptions({ name: 'MatchesView' })
+
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
@@ -7,9 +9,11 @@ import { matchesApi } from '@/services/endpoints'
 import type { Match } from '@/types'
 import { MATCH_STATUS_LABELS } from '@/types'
 import { useDebouncedWatch } from '@/composables/useDebouncedWatch'
+import { useCachedQuery } from '@/composables/useCachedQuery'
 import InputText from 'primevue/inputtext'
 import Button from 'primevue/button'
 import ProgressSpinner from 'primevue/progressspinner'
+import RefreshIndicator from '@/components/RefreshIndicator.vue'
 import FilterChips from '@/components/FilterChips.vue'
 import FilterSheet from '@/components/FilterSheet.vue'
 import type { FilterOption } from '@/components/FilterSheet.vue'
@@ -17,9 +21,7 @@ import type { FilterOption } from '@/components/FilterSheet.vue'
 const router = useRouter()
 const auth = useAuthStore()
 const settings = useSettingsStore()
-const matches = ref<Match[]>([])
 const cities = ref<string[]>([])
-const loading = ref(true)
 const search = ref('')
 const statusFilter = ref<string | null>(null)
 const cityFilter = ref<string | null>(null)
@@ -90,18 +92,19 @@ const filterChips = computed(() => [
   { id: 'price', label: maxPrice.value ? priceLabel.value : 'Preço', value: priceValue.value, icon: 'pi pi-wallet' }
 ])
 
-async function loadCities() {
-  try {
-    const { data } = await matchesApi.getCities()
-    if (data.success) cities.value = data.data
-  } catch {
-    cities.value = []
-  }
-}
+const queryKey = computed(() => JSON.stringify({
+  search: search.value,
+  status: statusFilter.value,
+  city: cityFilter.value,
+  maxPrice: maxPrice.value,
+  maxDistance: maxDistance.value,
+  lat: userLocation.value?.lat,
+  lng: userLocation.value?.lng
+}))
 
-async function loadMatches() {
-  loading.value = true
-  try {
+const { data, loading, refreshing, refresh } = useCachedQuery<Match[]>(
+  () => `matches:list:${queryKey.value}`,
+  async () => {
     const params: Record<string, unknown> = {
       page: 1, pageSize: 20,
       search: search.value || undefined,
@@ -114,17 +117,26 @@ async function loadMatches() {
       params.userLatitude = userLocation.value.lat
       params.userLongitude = userLocation.value.lng
     }
-    const { data } = await matchesApi.getAll(params)
-    if (data.success) matches.value = data.data.items
-  } finally {
-    loading.value = false
+    const { data: res } = await matchesApi.getAll(params)
+    return res.success ? res.data.items : []
+  }
+)
+
+const matches = computed(() => data.value ?? [])
+
+async function loadCities() {
+  try {
+    const { data } = await matchesApi.getCities()
+    if (data.success) cities.value = data.data
+  } catch {
+    cities.value = []
   }
 }
 
 function getLocation() {
   navigator.geolocation.getCurrentPosition(
-    pos => { userLocation.value = { lat: pos.coords.latitude, lng: pos.coords.longitude }; loadMatches() },
-    () => loadMatches()
+    pos => { userLocation.value = { lat: pos.coords.latitude, lng: pos.coords.longitude } },
+    () => { /* lista sem distância */ }
   )
 }
 
@@ -134,7 +146,7 @@ onMounted(async () => {
   getLocation()
 })
 
-useDebouncedWatch([search, statusFilter, cityFilter, maxPrice, maxDistance], loadMatches)
+useDebouncedWatch([search, statusFilter, cityFilter, maxPrice, maxDistance], () => refresh(false))
 
 function goCreate() {
   if (!auth.isAuthenticated) return router.push({ name: 'login', query: { redirect: '/matches/new' } })
@@ -162,6 +174,7 @@ function formatDate(date: string) {
 
 <template>
   <div class="page-container">
+    <RefreshIndicator :visible="refreshing" />
     <div class="header-row">
       <div>
         <h1 class="page-title">Peladas</h1>

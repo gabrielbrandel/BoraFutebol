@@ -1,29 +1,33 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+defineOptions({ name: 'RankingView' })
+
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { dashboardApi } from '@/services/endpoints'
 import type { PlayerRanking } from '@/types'
+import { useCachedQuery } from '@/composables/useCachedQuery'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import Avatar from 'primevue/avatar'
 import ProgressSpinner from 'primevue/progressspinner'
+import RefreshIndicator from '@/components/RefreshIndicator.vue'
 
 const router = useRouter()
-const ranking = ref<PlayerRanking[]>([])
-const loading = ref(true)
 
-onMounted(async () => {
-  try {
-    const { data } = await dashboardApi.getRanking()
-    if (data.success) ranking.value = data.data
-  } finally {
-    loading.value = false
+const { data, loading, refreshing } = useCachedQuery<PlayerRanking[]>(
+  'ranking:players',
+  async () => {
+    const { data: res } = await dashboardApi.getRanking()
+    return res.success ? res.data : []
   }
-})
+)
+
+const ranking = computed(() => data.value ?? [])
 </script>
 
 <template>
   <div class="page-container">
+    <RefreshIndicator :visible="refreshing" />
     <h1 class="page-title">Ranking de Jogadores</h1>
     <p class="page-subtitle">Os melhores da comunidade</p>
 

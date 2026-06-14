@@ -1,6 +1,10 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+defineOptions({ name: 'FieldsAdminView' })
+
+import { ref, computed } from 'vue'
 import { fieldsApi } from '@/services/endpoints'
+import { queryCache } from '@/services/queryCache'
+import { useCachedQuery } from '@/composables/useCachedQuery'
 import type { Field } from '@/types'
 import { FIELD_TYPE_LABELS } from '@/types'
 import { lookupCep, geocodeAddress, formatCep, resolveAssetUrl } from '@/utils/address'
@@ -14,12 +18,31 @@ import Select from 'primevue/select'
 import Checkbox from 'primevue/checkbox'
 import SelectButton from 'primevue/selectbutton'
 import FileUpload from 'primevue/fileupload'
+import ProgressSpinner from 'primevue/progressspinner'
+import RefreshIndicator from '@/components/RefreshIndicator.vue'
 import { useToast } from 'primevue/usetoast'
 import { useConfirm } from 'primevue/useconfirm'
 
 const toast = useToast()
 const confirm = useConfirm()
-const fields = ref<Field[]>([])
+
+const { data, loading, refreshing, refresh } = useCachedQuery<Field[]>(
+  'admin:fields',
+  async () => {
+    const { data: res } = await fieldsApi.getAll({ page: 1, pageSize: 50 })
+    return res.success ? res.data.items : []
+  },
+  { staleMs: 20_000 }
+)
+
+const fields = computed(() => data.value ?? [])
+
+async function reloadFields() {
+  queryCache.invalidate('admin:fields')
+  queryCache.invalidate('fields')
+  queryCache.invalidate('map')
+  await refresh(false)
+}
 const showDialog = ref(false)
 const editingId = ref<string | null>(null)
 const loadingCep = ref(false)
@@ -45,13 +68,6 @@ const photoModeOptions = [
   { label: 'Link da imagem', value: 'link' },
   { label: 'Upload', value: 'upload' }
 ]
-
-async function loadFields() {
-  const { data } = await fieldsApi.getAll({ page: 1, pageSize: 50 })
-  if (data.success) fields.value = data.data.items
-}
-
-onMounted(loadFields)
 
 function openCreate() {
   editingId.value = null
@@ -135,7 +151,7 @@ async function saveField() {
       toast.add({ severity: 'success', summary: 'Campo cadastrado!' })
     }
     showDialog.value = false
-    await loadFields()
+    await reloadFields()
   } catch (e: unknown) {
     const err = e as { response?: { data?: { message?: string } } }
     toast.add({ severity: 'error', summary: 'Erro ao salvar', detail: err.response?.data?.message || 'Tente novamente' })
@@ -149,7 +165,7 @@ function deleteField(field: Field) {
     accept: async () => {
       await fieldsApi.delete(field.id)
       toast.add({ severity: 'success', summary: 'Campo removido' })
-      await loadFields()
+      await reloadFields()
     }
   })
 }
@@ -161,12 +177,15 @@ function fieldPhoto(url?: string) {
 
 <template>
   <div class="page-container">
+    <RefreshIndicator :visible="refreshing" />
     <div class="header-row">
       <h1 class="page-title">Gerenciar Campos</h1>
       <Button label="Novo Campo" icon="pi pi-plus" @click="openCreate" />
     </div>
 
-    <DataTable :value="fields" stripedRows paginator :rows="10">
+    <div v-if="loading" class="loading"><ProgressSpinner /></div>
+
+    <DataTable v-else :value="fields" stripedRows paginator :rows="10">
       <Column header="Foto" style="width: 80px">
         <template #body="{ data }">
           <img v-if="fieldPhoto(data.mainPhotoUrl)" :src="fieldPhoto(data.mainPhotoUrl)!" :alt="data.name" class="thumb" />
@@ -255,4 +274,5 @@ function fieldPhoto(url?: string) {
 .preview { margin-top: 0.75rem; max-width: 100%; max-height: 120px; border-radius: 8px; object-fit: cover; }
 .text-muted { color: var(--ds-text-muted); }
 .photo-section { display: flex; flex-direction: column; gap: 0.5rem; }
+.loading { display: flex; justify-content: center; padding: 3rem; }
 </style>

@@ -5,7 +5,7 @@ import { normalize, matchesAny } from '../lib/textSearch.js'
 import { calculateDistanceKm } from '../lib/geo.js'
 import { paginate } from '../lib/response.js'
 import { toNumber } from '../lib/mappers.js'
-import { generateBalancedTeams } from '../lib/teamFormation.js'
+import { generateBalancedTeams, type PlayerForFormation } from '../lib/teamFormation.js'
 
 function mapMatch(match: {
   id: string
@@ -274,10 +274,10 @@ export async function generateTeams(matchId: string) {
     ]
   })
 
-  const mapPlayer = (p: typeof players[0]) => ({
+  const mapPlayer = (p: PlayerForFormation) => ({
     userId: p.userId,
     name: p.name,
-    photoUrl: p.photoUrl,
+    photoUrl: p.photoUrl ?? null,
     position: p.position,
     technicalLevel: p.technicalLevel
   })

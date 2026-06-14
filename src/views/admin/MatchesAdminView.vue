@@ -1,6 +1,10 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+defineOptions({ name: 'MatchesAdminView' })
+
+import { ref, computed } from 'vue'
 import { matchesApi, recurringMatchesApi, fieldsApi, refereesApi, goalkeepersApi } from '@/services/endpoints'
+import { queryCache } from '@/services/queryCache'
+import { useCachedQuery } from '@/composables/useCachedQuery'
 import type { Match, RecurringMatch } from '@/types'
 import { MATCH_STATUS_LABELS } from '@/types'
 import DataTable from 'primevue/datatable'
@@ -14,16 +18,55 @@ import Calendar from 'primevue/calendar'
 import TabView from 'primevue/tabview'
 import TabPanel from 'primevue/tabpanel'
 import Tag from 'primevue/tag'
+import ProgressSpinner from 'primevue/progressspinner'
+import RefreshIndicator from '@/components/RefreshIndicator.vue'
 import { useToast } from 'primevue/usetoast'
 import { useConfirm } from 'primevue/useconfirm'
 
+interface AdminMatchesData {
+  matches: Match[]
+  recurring: RecurringMatch[]
+  fields: { id: string; name: string }[]
+  referees: { id: string; name: string }[]
+  goalkeepers: { id: string; name: string }[]
+}
+
 const toast = useToast()
 const confirm = useConfirm()
-const matches = ref<Match[]>([])
-const recurring = ref<RecurringMatch[]>([])
-const fields = ref<{ id: string; name: string }[]>([])
-const referees = ref<{ id: string; name: string }[]>([])
-const goalkeepers = ref<{ id: string; name: string }[]>([])
+
+const { data, loading, refreshing, refresh } = useCachedQuery<AdminMatchesData>(
+  'admin:matches',
+  async () => {
+    const [m, r, f, ref, g] = await Promise.all([
+      matchesApi.getAll({ page: 1, pageSize: 100 }),
+      recurringMatchesApi.getAll(),
+      fieldsApi.getAll({ page: 1, pageSize: 50 }),
+      refereesApi.getAll({ page: 1, pageSize: 50 }),
+      goalkeepersApi.getAll({ page: 1, pageSize: 50 })
+    ])
+    return {
+      matches: m.data.success ? m.data.data.items : [],
+      recurring: r.data.success ? r.data.data : [],
+      fields: f.data.success ? f.data.data.items.map(i => ({ id: i.id, name: i.name })) : [],
+      referees: ref.data.success ? ref.data.data.items : [],
+      goalkeepers: g.data.success ? g.data.data.items : []
+    }
+  },
+  { staleMs: 20_000 }
+)
+
+const matches = computed(() => data.value?.matches ?? [])
+const recurring = computed(() => data.value?.recurring ?? [])
+const fields = computed(() => data.value?.fields ?? [])
+const referees = computed(() => data.value?.referees ?? [])
+const goalkeepers = computed(() => data.value?.goalkeepers ?? [])
+
+async function reloadAll() {
+  queryCache.invalidate('admin:matches')
+  queryCache.invalidate('matches')
+  queryCache.invalidate('home')
+  await refresh(false)
+}
 
 const showMatchDialog = ref(false)
 const showRecurringDialog = ref(false)
@@ -46,23 +89,6 @@ const recurringForm = ref({
   fieldId: '', time: '20:00', maxPlayers: 14, refereeId: '', goalkeeperId: '',
   participationFee: 35, notes: '', daysOfWeek: [] as number[]
 })
-
-onMounted(loadAll)
-
-async function loadAll() {
-  const [m, r, f, ref, g] = await Promise.all([
-    matchesApi.getAll({ page: 1, pageSize: 100 }),
-    recurringMatchesApi.getAll(),
-    fieldsApi.getAll({ page: 1, pageSize: 50 }),
-    refereesApi.getAll({ page: 1, pageSize: 50 }),
-    goalkeepersApi.getAll({ page: 1, pageSize: 50 })
-  ])
-  if (m.data.success) matches.value = m.data.data.items
-  if (r.data.success) recurring.value = r.data.data
-  if (f.data.success) fields.value = f.data.data.items.map(i => ({ id: i.id, name: i.name }))
-  if (ref.data.success) referees.value = ref.data.data.items
-  if (g.data.success) goalkeepers.value = g.data.data.items
-}
 
 function openCreateMatch() {
   editingMatchId.value = null
@@ -106,7 +132,7 @@ async function saveMatch() {
       toast.add({ severity: 'success', summary: 'Partida criada!' })
     }
     showMatchDialog.value = false
-    await loadAll()
+    await reloadAll()
   } catch (e: unknown) {
     const err = e as { response?: { data?: { message?: string } } }
     toast.add({ severity: 'error', summary: 'Erro', detail: err.response?.data?.message })
@@ -120,7 +146,7 @@ function deleteMatch(match: Match) {
     accept: async () => {
       await matchesApi.delete(match.id)
       toast.add({ severity: 'success', summary: 'Partida cancelada' })
-      await loadAll()
+      await reloadAll()
     }
   })
 }
@@ -171,7 +197,7 @@ async function saveRecurring() {
       toast.add({ severity: 'success', summary: 'Agenda recorrente criada!' })
     }
     showRecurringDialog.value = false
-    await loadAll()
+    await reloadAll()
   } catch (e: unknown) {
     const err = e as { response?: { data?: { message?: string } } }
     toast.add({ severity: 'error', summary: 'Erro', detail: err.response?.data?.message })
@@ -185,7 +211,7 @@ function deleteRecurring(item: RecurringMatch) {
     accept: async () => {
       await recurringMatchesApi.delete(item.id)
       toast.add({ severity: 'success', summary: 'Agenda removida' })
-      await loadAll()
+      await reloadAll()
     }
   })
 }
@@ -197,7 +223,7 @@ function cancelOccurrence(item: RecurringMatch, date: string) {
     accept: async () => {
       await recurringMatchesApi.cancelOccurrence(item.id, date)
       toast.add({ severity: 'success', summary: 'Dia cancelado' })
-      await loadAll()
+      await reloadAll()
     }
   })
 }
@@ -213,9 +239,12 @@ function statusSeverity(status: string) {
 
 <template>
   <div class="page-container">
+    <RefreshIndicator :visible="refreshing" />
     <h1 class="page-title">Gerenciar Partidas</h1>
 
-    <TabView>
+    <div v-if="loading" class="loading"><ProgressSpinner /></div>
+
+    <TabView v-else>
       <TabPanel value="matches" header="Partidas">
         <div class="header-row">
           <p class="subtitle">Partidas avulsas e geradas automaticamente</p>
@@ -339,4 +368,5 @@ function statusSeverity(status: string) {
 .occurrence { display: flex; align-items: center; gap: 0.5rem; background: var(--ds-bg); padding: 0.5rem 0.75rem; border-radius: 8px; font-size: 0.875rem; }
 .days-row { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .empty { text-align: center; color: var(--ds-text-muted); padding: 2rem; }
+.loading { display: flex; justify-content: center; padding: 3rem; }
 </style>

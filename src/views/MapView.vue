@@ -1,16 +1,20 @@
 <script setup lang="ts">
+defineOptions({ name: 'MapView' })
+
 import { ref, computed, onMounted, watch } from 'vue'
 import { LMap, LTileLayer, LMarker, LPopup, LPolyline } from '@vue-leaflet/vue-leaflet'
 import { fieldsApi } from '@/services/endpoints'
 import type { Field } from '@/types'
 import { FIELD_TYPE_LABELS } from '@/types'
 import { useGeolocation } from '@/composables/useGeolocation'
+import { useCachedQuery } from '@/composables/useCachedQuery'
 import { useThemeStore } from '@/stores/theme'
 import FilterChips from '@/components/FilterChips.vue'
 import FilterSheet from '@/components/FilterSheet.vue'
 import type { FilterOption } from '@/components/FilterSheet.vue'
 import Button from 'primevue/button'
 import ProgressSpinner from 'primevue/progressspinner'
+import RefreshIndicator from '@/components/RefreshIndicator.vue'
 import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
 
@@ -39,8 +43,6 @@ const fieldIcon = L.divIcon({
 const theme = useThemeStore()
 const { coords, loading: geoLoading, error: geoError, source, resolveLocation } = useGeolocation()
 
-const fields = ref<Field[]>([])
-const loading = ref(true)
 const selectedField = ref<Field | null>(null)
 const routeCoords = ref<[number, number][]>([])
 const maxDistance = ref<number | null>(null)
@@ -90,20 +92,29 @@ const locationHint = computed(() => {
   return null
 })
 
-async function loadFields() {
-  loading.value = true
-  try {
+const mapQueryKey = computed(() => JSON.stringify({
+  lat: userLocation.value[0].toFixed(4),
+  lng: userLocation.value[1].toFixed(4),
+  maxDistance: maxDistance.value
+}))
+
+const { data: mapFields, loading, refreshing, refresh } = useCachedQuery<Field[]>(
+  () => `map:fields:${mapQueryKey.value}`,
+  async () => {
     const params: Record<string, unknown> = {
       lat: userLocation.value[0],
       lng: userLocation.value[1]
     }
     if (maxDistance.value) params.maxDistance = maxDistance.value
-
     const { data } = await fieldsApi.getMap(params)
-    if (data.success) fields.value = data.data
-  } finally {
-    loading.value = false
+    return data.success ? data.data : []
   }
+)
+
+const fields = computed(() => mapFields.value ?? [])
+
+async function loadFields(background = false) {
+  await refresh(background)
 }
 
 function flyToUser() {
@@ -137,7 +148,7 @@ function toggleSheet() {
   sheetExpanded.value = !sheetExpanded.value
 }
 
-watch(maxDistance, loadFields)
+watch(maxDistance, () => loadFields(true))
 
 onMounted(async () => {
   await resolveLocation()
@@ -148,6 +159,7 @@ onMounted(async () => {
 
 <template>
   <div class="map-page">
+    <RefreshIndicator :visible="refreshing" />
     <div class="map-container">
       <l-map
         ref="mapRef"

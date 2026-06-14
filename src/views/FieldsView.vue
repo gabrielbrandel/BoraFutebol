@@ -1,4 +1,6 @@
 <script setup lang="ts">
+defineOptions({ name: 'FieldsView' })
+
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
@@ -8,9 +10,11 @@ import type { Field } from '@/types'
 import { FIELD_TYPE_LABELS } from '@/types'
 import { resolveAssetUrl } from '@/utils/address'
 import { useDebouncedWatch } from '@/composables/useDebouncedWatch'
+import { useCachedQuery } from '@/composables/useCachedQuery'
 import InputText from 'primevue/inputtext'
 import Button from 'primevue/button'
 import ProgressSpinner from 'primevue/progressspinner'
+import RefreshIndicator from '@/components/RefreshIndicator.vue'
 import Tag from 'primevue/tag'
 import FilterChips from '@/components/FilterChips.vue'
 import FilterSheet from '@/components/FilterSheet.vue'
@@ -19,9 +23,7 @@ import type { FilterOption } from '@/components/FilterSheet.vue'
 const router = useRouter()
 const auth = useAuthStore()
 const settings = useSettingsStore()
-const fields = ref<Field[]>([])
 const cities = ref<string[]>([])
-const loading = ref(true)
 const search = ref('')
 const city = ref<string | null>(null)
 const type = ref<string | null>(null)
@@ -47,13 +49,30 @@ const filterChips = computed(() => [
   { id: 'type', label: type.value ? FIELD_TYPE_LABELS[type.value] || type.value : 'Tipo', value: type.value, icon: 'pi pi-flag' }
 ])
 
+const queryKey = computed(() => JSON.stringify({ search: search.value, city: city.value, type: type.value }))
+
+const { data, loading, refreshing, refresh } = useCachedQuery<Field[]>(
+  () => `fields:list:${queryKey.value}`,
+  async () => {
+    const { data: res } = await fieldsApi.getAll({
+      page: 1,
+      pageSize: 20,
+      search: search.value || undefined,
+      city: city.value || undefined,
+      type: type.value || undefined
+    })
+    return res.success ? res.data.items : []
+  }
+)
+
+const fields = computed(() => data.value ?? [])
+
 onMounted(async () => {
   if (!settings.loaded) await settings.fetchSettings()
   await loadCities()
-  await load()
 })
 
-useDebouncedWatch([search, city, type], load)
+useDebouncedWatch([search, city, type], () => refresh(false))
 
 async function loadCities() {
   try {
@@ -61,22 +80,6 @@ async function loadCities() {
     if (data.success) cities.value = data.data
   } catch {
     cities.value = []
-  }
-}
-
-async function load() {
-  loading.value = true
-  try {
-    const { data } = await fieldsApi.getAll({
-      page: 1,
-      pageSize: 20,
-      search: search.value || undefined,
-      city: city.value || undefined,
-      type: type.value || undefined
-    })
-    if (data.success) fields.value = data.data.items
-  } finally {
-    loading.value = false
   }
 }
 
@@ -102,6 +105,7 @@ function clearFilters() {
 
 <template>
   <div class="page-container">
+    <RefreshIndicator :visible="refreshing" />
     <div class="header-row">
       <div>
         <h1 class="page-title">Campos</h1>

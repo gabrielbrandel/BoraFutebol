@@ -286,3 +286,48 @@ a {
   i { font-size: 1.5rem; color: #fbbf24; }
   span { font-size: 0.7rem; margin-top: 0.25rem; text-align: center; }
 }
+
+/* Toasts discretos — somem sozinhos após ~3s */
+.app-toast-container.p-toast {
+  width: min(22rem, calc(100vw - 1.5rem));
+  opacity: 0.95;
+
+  .p-toast-message.app-toast {
+    margin: 0.35rem 0;
+    border-radius: 999px;
+    box-shadow: 0 4px 16px rgb(0 0 0 / 0.12);
+    backdrop-filter: blur(8px);
+
+    .p-toast-message-content {
+      padding: 0.55rem 0.9rem;
+      gap: 0.5rem;
+      align-items: center;
+    }
+
+    .p-toast-message-icon {
+      font-size: 0.95rem;
+    }
+
+    .p-toast-summary {
+      font-size: 0.82rem;
+      font-weight: 600;
+      line-height: 1.3;
+    }
+
+    .p-toast-detail {
+      font-size: 0.75rem;
+      margin-top: 0.1rem;
+      opacity: 0.9;
+    }
+  }
+}
+
+@media (max-width: 768px) {
+  .app-toast-container.p-toast {
+    bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px)) !important;
+    left: 50% !important;
+    transform: translateX(-50%);
+    right: auto !important;
+    top: auto !important;
+  }
+}

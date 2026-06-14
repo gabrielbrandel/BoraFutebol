@@ -1,24 +1,31 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+defineOptions({ name: 'NotificationsView' })
+
+import { computed } from 'vue'
 import { notificationsApi } from '@/services/endpoints'
 import type { Notification } from '@/types'
+import { useCachedQuery } from '@/composables/useCachedQuery'
+import { queryCache } from '@/services/queryCache'
 import Button from 'primevue/button'
 import ProgressSpinner from 'primevue/progressspinner'
+import RefreshIndicator from '@/components/RefreshIndicator.vue'
 
-const notifications = ref<Notification[]>([])
-const loading = ref(true)
+const { data, loading, refreshing } = useCachedQuery<Notification[]>(
+  'notifications:list',
+  async () => {
+    const { data: res } = await notificationsApi.getAll()
+    return res.success ? res.data : []
+  },
+  { staleMs: 15_000 }
+)
 
-onMounted(async () => {
-  try {
-    const { data } = await notificationsApi.getAll()
-    if (data.success) notifications.value = data.data
-  } finally { loading.value = false }
-})
+const notifications = computed(() => data.value ?? [])
 
 async function markRead(id: string) {
   await notificationsApi.markRead(id)
-  const n = notifications.value.find(n => n.id === id)
+  const n = notifications.value.find(item => item.id === id)
   if (n) n.isRead = true
+  queryCache.invalidate('notifications')
 }
 
 const typeIcons: Record<string, string> = {
@@ -33,6 +40,7 @@ const typeIcons: Record<string, string> = {
 
 <template>
   <div class="page-container">
+    <RefreshIndicator :visible="refreshing" />
     <h1 class="page-title">Notificações</h1>
 
     <div v-if="loading" class="loading"><ProgressSpinner /></div>

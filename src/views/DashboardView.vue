@@ -1,24 +1,25 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+defineOptions({ name: 'DashboardView' })
+
 import { dashboardApi } from '@/services/endpoints'
 import type { Dashboard } from '@/types'
+import { useCachedQuery } from '@/composables/useCachedQuery'
 import { Bar, Line } from 'vue-chartjs'
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend } from 'chart.js'
 import ProgressSpinner from 'primevue/progressspinner'
+import RefreshIndicator from '@/components/RefreshIndicator.vue'
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend)
 
-const dashboard = ref<Dashboard | null>(null)
-const loading = ref(true)
-
-onMounted(async () => {
-  try {
-    const { data } = await dashboardApi.get()
-    if (data.success) dashboard.value = data.data
-  } finally {
-    loading.value = false
-  }
-})
+const { data: dashboard, loading, refreshing } = useCachedQuery<Dashboard>(
+  'admin:dashboard',
+  async () => {
+    const { data: res } = await dashboardApi.get()
+    if (!res.success) throw new Error('Falha ao carregar dashboard')
+    return res.data
+  },
+  { staleMs: 60_000 }
+)
 
 const revenueChartData = () => ({
   labels: dashboard.value?.revenueChart.map(c => c.label) || [],
@@ -33,6 +34,7 @@ const matchesChartData = () => ({
 
 <template>
   <div class="page-container">
+    <RefreshIndicator :visible="refreshing" />
     <h1 class="page-title">Dashboard</h1>
     <p class="page-subtitle">Visão geral do sistema</p>
 

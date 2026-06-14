@@ -10,7 +10,6 @@ import Button from 'primevue/button'
 import Avatar from 'primevue/avatar'
 import Drawer from 'primevue/drawer'
 import ConfirmDialog from 'primevue/confirmdialog'
-import Toast from 'primevue/toast'
 
 const router = useRouter()
 const route = useRoute()
@@ -118,7 +117,11 @@ const adminLinks = [
     </Drawer>
 
     <main class="main-content" :class="{ 'no-padding': route.name === 'map', 'has-bottom-nav': route.name !== 'map' }">
-      <router-view />
+      <router-view v-slot="{ Component, route: viewRoute }">
+        <keep-alive :max="10">
+          <component :is="Component" :key="viewRoute.fullPath" />
+        </keep-alive>
+      </router-view>
     </main>
 
     <footer class="footer desktop-only">
@@ -127,7 +130,6 @@ const adminLinks = [
 
     <BottomNav />
     <ConfirmDialog />
-    <Toast position="top-center" class="mobile-toast" />
   </div>
 </template>
 

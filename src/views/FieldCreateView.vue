@@ -13,6 +13,7 @@ import SelectButton from 'primevue/selectbutton'
 import FileUpload from 'primevue/fileupload'
 import Button from 'primevue/button'
 import { useToast } from 'primevue/usetoast'
+import { queryCache } from '@/services/queryCache'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -75,6 +76,9 @@ async function onPhotoUpload(event: { files: File[] }) {
 async function submit() {
   try {
     await fieldsApi.create({ ...form.value, zipCode: form.value.zipCode || null, mainPhotoUrl: form.value.mainPhotoUrl || null })
+    queryCache.invalidate('fields')
+    queryCache.invalidate('admin:fields')
+    queryCache.invalidate('map')
     toast.add({ severity: 'success', summary: 'Campo cadastrado com sucesso!' })
     router.push('/fields')
   } catch (e: unknown) {

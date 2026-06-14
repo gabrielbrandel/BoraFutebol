@@ -1,21 +1,32 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+defineOptions({ name: 'UsersAdminView' })
+
+import { computed } from 'vue'
 import { usersApi } from '@/services/endpoints'
+import { queryCache } from '@/services/queryCache'
+import { useCachedQuery } from '@/composables/useCachedQuery'
 import type { UserProfile } from '@/types'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import Button from 'primevue/button'
+import ProgressSpinner from 'primevue/progressspinner'
+import RefreshIndicator from '@/components/RefreshIndicator.vue'
 import { useConfirm } from 'primevue/useconfirm'
 import { useToast } from 'primevue/usetoast'
 
 const confirm = useConfirm()
 const toast = useToast()
-const users = ref<UserProfile[]>([])
 
-onMounted(async () => {
-  const { data } = await usersApi.getAll({ page: 1, pageSize: 50 })
-  if (data.success) users.value = data.data.items
-})
+const { data, loading, refreshing, refresh } = useCachedQuery<UserProfile[]>(
+  'admin:users',
+  async () => {
+    const { data: res } = await usersApi.getAll({ page: 1, pageSize: 50 })
+    return res.success ? res.data.items : []
+  },
+  { staleMs: 30_000 }
+)
+
+const users = computed(() => data.value ?? [])
 
 function deleteUser(user: UserProfile) {
   confirm.require({
@@ -24,7 +35,8 @@ function deleteUser(user: UserProfile) {
     accept: async () => {
       await usersApi.delete(user.id)
       toast.add({ severity: 'success', summary: 'Usuário removido' })
-      users.value = users.value.filter(u => u.id !== user.id)
+      queryCache.invalidate('admin:users')
+      await refresh(false)
     }
   })
 }
@@ -32,16 +44,20 @@ function deleteUser(user: UserProfile) {
 async function toggleRole(user: UserProfile) {
   const newRole = user.role === 'Admin' ? 'User' : 'Admin'
   await usersApi.updateRole(user.id, newRole)
-  user.role = newRole
   toast.add({ severity: 'info', summary: `Papel alterado para ${newRole}` })
+  queryCache.invalidate('admin:users')
+  await refresh(false)
 }
 </script>
 
 <template>
   <div class="page-container">
+    <RefreshIndicator :visible="refreshing" />
     <h1 class="page-title">Gerenciar Usuários</h1>
 
-    <DataTable :value="users" stripedRows paginator :rows="10">
+    <div v-if="loading" class="loading"><ProgressSpinner /></div>
+
+    <DataTable v-else :value="users" stripedRows paginator :rows="10">
       <Column field="name" header="Nome" />
       <Column field="email" header="Email" />
       <Column field="city" header="Cidade" />
@@ -55,3 +71,7 @@ async function toggleRole(user: UserProfile) {
     </DataTable>
   </div>
 </template>
+
+<style scoped lang="scss">
+.loading { display: flex; justify-content: center; padding: 3rem; }
+</style>

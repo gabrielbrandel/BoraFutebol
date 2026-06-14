@@ -10,6 +10,7 @@ import Select from 'primevue/select'
 import Calendar from 'primevue/calendar'
 import Button from 'primevue/button'
 import { useToast } from 'primevue/usetoast'
+import { queryCache } from '@/services/queryCache'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -55,6 +56,10 @@ async function submit() {
       notes: form.value.notes || null
     })
     if (data.success) {
+      queryCache.invalidate('matches')
+      queryCache.invalidate('home')
+      queryCache.invalidate('admin')
+      queryCache.invalidate('map')
       toast.add({ severity: 'success', summary: 'Pelada criada!' })
       router.push(`/matches/${data.data.id}`)
     }

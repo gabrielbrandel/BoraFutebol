@@ -12,7 +12,7 @@ import * as recurringService from './services/recurringMatchService.js'
 export function createApp() {
   const app = new Hono<{ Variables: AuthVariables }>().basePath('/api')
 
-  const origins = (process.env.CORS_ORIGINS || 'http://localhost:5173,https://datesoccer.vercel.app')
+  const origins = (process.env.CORS_ORIGINS || 'http://localhost:5173,https://borafutebol.vercel.app')
     .split(',')
     .map(o => o.trim())
 
@@ -26,7 +26,7 @@ export function createApp() {
     return c.json(fail('Erro interno do servidor'), 500)
   })
 
-  app.get('/health', c => c.json(ok({ status: 'ok' })))
+  app.get('/health', c => c.json(ok({ status: 'ok', db: !!process.env.DATABASE_URL })))
 
   // Auth
   app.post('/auth/register', async c => {
@@ -98,7 +98,7 @@ export function createApp() {
     return c.json(ok(data))
   })
 
-  app.get('/fields/:id', async c => c.json(ok(await fieldService.getFieldById(c.req.param('id')))))
+  app.get('/fields/:id', async c => c.json(ok(await fieldService.getFieldById(c.req.param('id')!))))
 
   app.post('/fields', authMiddleware, async c => {
     await appServices.ensureCanCreateFields(c.get('role') === 'Admin')
@@ -108,17 +108,17 @@ export function createApp() {
 
   app.put('/fields/:id', authMiddleware, adminMiddleware, async c => {
     const body = await c.req.json()
-    return c.json(ok(await fieldService.updateField(c.req.param('id'), body), 'Campo atualizado'))
+    return c.json(ok(await fieldService.updateField(c.req.param('id')!, body), 'Campo atualizado'))
   })
 
   app.delete('/fields/:id', authMiddleware, adminMiddleware, async c => {
-    await fieldService.deleteField(c.req.param('id'))
+    await fieldService.deleteField(c.req.param('id')!)
     return c.json(ok(null, 'Campo removido'))
   })
 
   app.post('/fields/:id/rate', authMiddleware, async c => {
     const body = await c.req.json()
-    await fieldService.rateField(c.req.param('id'), c.get('userId'), body)
+    await fieldService.rateField(c.req.param('id')!, c.get('userId'), body)
     return c.json(ok(null, 'Avaliação registrada'))
   })
 
@@ -139,8 +139,8 @@ export function createApp() {
     return c.json(ok(data))
   })
 
-  app.get('/matches/:id', async c => c.json(ok(await matchService.getMatchById(c.req.param('id')))))
-  app.get('/matches/:id/attendances', async c => c.json(ok(await matchService.getAttendances(c.req.param('id')))))
+  app.get('/matches/:id', async c => c.json(ok(await matchService.getMatchById(c.req.param('id')!))))
+  app.get('/matches/:id/attendances', async c => c.json(ok(await matchService.getAttendances(c.req.param('id')!))))
 
   app.post('/matches', authMiddleware, async c => {
     await appServices.ensureCanCreateMatches(c.get('role') === 'Admin')
@@ -150,47 +150,47 @@ export function createApp() {
 
   app.put('/matches/:id', authMiddleware, adminMiddleware, async c => {
     const body = await c.req.json()
-    return c.json(ok(await matchService.updateMatch(c.req.param('id'), body), 'Partida atualizada'))
+    return c.json(ok(await matchService.updateMatch(c.req.param('id')!, body), 'Partida atualizada'))
   })
 
   app.delete('/matches/:id', authMiddleware, adminMiddleware, async c => {
-    await matchService.deleteMatch(c.req.param('id'))
+    await matchService.deleteMatch(c.req.param('id')!)
     return c.json(ok(null, 'Partida removida'))
   })
 
   app.post('/matches/:id/confirm', authMiddleware, async c => {
-    await matchService.confirmAttendance(c.req.param('id'), c.get('userId'))
+    await matchService.confirmAttendance(c.req.param('id')!, c.get('userId'))
     return c.json(ok(null, 'Presença confirmada'))
   })
 
   app.post('/matches/:id/cancel', authMiddleware, async c => {
-    await matchService.cancelAttendance(c.req.param('id'), c.get('userId'))
+    await matchService.cancelAttendance(c.req.param('id')!, c.get('userId'))
     return c.json(ok(null, 'Presença cancelada'))
   })
 
   app.post('/matches/:id/waitlist', authMiddleware, async c => {
-    await matchService.joinWaitlist(c.req.param('id'), c.get('userId'))
+    await matchService.joinWaitlist(c.req.param('id')!, c.get('userId'))
     return c.json(ok(null, 'Entrou na lista de espera'))
   })
 
   app.post('/matches/:id/teams', authMiddleware, adminMiddleware, async c => {
-    const data = await matchService.generateTeams(c.req.param('id'))
+    const data = await matchService.generateTeams(c.req.param('id')!)
     return c.json(ok(data, 'Times gerados'))
   })
 
   app.get('/matches/:id/messages', authMiddleware, async c => {
-    return c.json(ok(await matchService.getMessages(c.req.param('id'))))
+    return c.json(ok(await matchService.getMessages(c.req.param('id')!)))
   })
 
   app.post('/matches/:id/messages', authMiddleware, async c => {
     const body = await c.req.json()
-    const data = await matchService.sendMessage(c.req.param('id'), c.get('userId'), body.content, body.photoUrl)
+    const data = await matchService.sendMessage(c.req.param('id')!, c.get('userId'), body.content, body.photoUrl)
     return c.json(ok(data, 'Mensagem enviada'))
   })
 
   app.post('/matches/:id/mvp', authMiddleware, async c => {
     const body = await c.req.json()
-    await matchService.voteMvp(c.req.param('id'), c.get('userId'), body.votedUserId)
+    await matchService.voteMvp(c.req.param('id')!, c.get('userId'), body.votedUserId)
     return c.json(ok(null, 'Voto registrado'))
   })
 
@@ -249,7 +249,7 @@ export function createApp() {
   })
 
   app.put('/notifications/:id/read', authMiddleware, async c => {
-    await appServices.markNotificationRead(c.req.param('id'), c.get('userId'))
+    await appServices.markNotificationRead(c.req.param('id')!, c.get('userId'))
     return c.json(ok(null, 'Notificação lida'))
   })
 
@@ -261,13 +261,13 @@ export function createApp() {
   })
 
   app.delete('/users/:id', authMiddleware, adminMiddleware, async c => {
-    await appServices.deleteUser(c.req.param('id'))
+    await appServices.deleteUser(c.req.param('id')!)
     return c.json(ok(null, 'Usuário removido'))
   })
 
   app.put('/users/:id/role', authMiddleware, adminMiddleware, async c => {
     const role = await c.req.json()
-    const data = await appServices.updateUserRole(c.req.param('id'), role)
+    const data = await appServices.updateUserRole(c.req.param('id')!, role)
     return c.json(ok(data, 'Papel atualizado'))
   })
 
@@ -284,7 +284,7 @@ export function createApp() {
   })
 
   app.get('/recurring-matches/:id', authMiddleware, adminMiddleware, async c => {
-    return c.json(ok(await recurringService.getRecurringById(c.req.param('id'))))
+    return c.json(ok(await recurringService.getRecurringById(c.req.param('id')!)))
   })
 
   app.post('/recurring-matches', authMiddleware, adminMiddleware, async c => {
@@ -295,18 +295,18 @@ export function createApp() {
 
   app.put('/recurring-matches/:id', authMiddleware, adminMiddleware, async c => {
     const body = await c.req.json()
-    const data = await recurringService.updateRecurring(c.req.param('id'), body)
+    const data = await recurringService.updateRecurring(c.req.param('id')!, body)
     return c.json(ok(data, 'Agenda recorrente atualizada'))
   })
 
   app.delete('/recurring-matches/:id', authMiddleware, adminMiddleware, async c => {
-    await recurringService.deleteRecurring(c.req.param('id'))
+    await recurringService.deleteRecurring(c.req.param('id')!)
     return c.json(ok(null, 'Agenda recorrente removida'))
   })
 
   app.post('/recurring-matches/:id/cancel-occurrence', authMiddleware, adminMiddleware, async c => {
     const body = await c.req.json()
-    await recurringService.cancelOccurrence(c.req.param('id'), body.date, body.reason)
+    await recurringService.cancelOccurrence(c.req.param('id')!, body.date, body.reason)
     return c.json(ok(null, 'Ocorrência cancelada'))
   })
 

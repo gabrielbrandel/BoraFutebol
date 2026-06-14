@@ -1,6 +1,10 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+defineOptions({ name: 'StaffAdminView' })
+
+import { ref, computed } from 'vue'
 import { staffApi, refereesApi, goalkeepersApi } from '@/services/endpoints'
+import { queryCache } from '@/services/queryCache'
+import { useCachedQuery } from '@/composables/useCachedQuery'
 import type { Referee, Goalkeeper } from '@/types'
 import { whatsappLink, formatPhone } from '@/utils/whatsapp'
 import InputText from 'primevue/inputtext'
@@ -8,6 +12,8 @@ import Select from 'primevue/select'
 import Button from 'primevue/button'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
+import ProgressSpinner from 'primevue/progressspinner'
+import RefreshIndicator from '@/components/RefreshIndicator.vue'
 import { useToast } from 'primevue/usetoast'
 
 interface StaffRow {
@@ -18,7 +24,38 @@ interface StaffRow {
 }
 
 const toast = useToast()
-const staff = ref<StaffRow[]>([])
+
+const { data, loading, refreshing, refresh } = useCachedQuery<StaffRow[]>(
+  'admin:staff',
+  async () => {
+    const [r, g] = await Promise.all([
+      refereesApi.getAll({ page: 1, pageSize: 50 }),
+      goalkeepersApi.getAll({ page: 1, pageSize: 50 })
+    ])
+
+    const rows: StaffRow[] = []
+    if (r.data.success) {
+      rows.push(...r.data.data.items.map((item: Referee) => ({
+        id: item.id,
+        name: item.name,
+        whatsApp: item.whatsApp,
+        position: 'Juiz'
+      })))
+    }
+    if (g.data.success) {
+      rows.push(...g.data.data.items.map((item: Goalkeeper) => ({
+        id: item.id,
+        name: item.name,
+        whatsApp: item.whatsApp,
+        position: 'Goleiro'
+      })))
+    }
+    return rows.sort((a, b) => a.name.localeCompare(b.name))
+  },
+  { staleMs: 30_000 }
+)
+
+const staff = computed(() => data.value ?? [])
 
 const form = ref({ name: '', whatsApp: '', position: 'referee' })
 
@@ -26,34 +63,6 @@ const positionOptions = [
   { label: 'Juiz', value: 'referee' },
   { label: 'Goleiro', value: 'goalkeeper' }
 ]
-
-onMounted(loadAll)
-
-async function loadAll() {
-  const [r, g] = await Promise.all([
-    refereesApi.getAll({ page: 1, pageSize: 50 }),
-    goalkeepersApi.getAll({ page: 1, pageSize: 50 })
-  ])
-
-  const rows: StaffRow[] = []
-  if (r.data.success) {
-    rows.push(...r.data.data.items.map((item: Referee) => ({
-      id: item.id,
-      name: item.name,
-      whatsApp: item.whatsApp,
-      position: 'Juiz'
-    })))
-  }
-  if (g.data.success) {
-    rows.push(...g.data.data.items.map((item: Goalkeeper) => ({
-      id: item.id,
-      name: item.name,
-      whatsApp: item.whatsApp,
-      position: 'Goleiro'
-    })))
-  }
-  staff.value = rows.sort((a, b) => a.name.localeCompare(b.name))
-}
 
 const positionLabel = computed(() =>
   positionOptions.find(o => o.value === form.value.position)?.label ?? 'Posição'
@@ -68,7 +77,9 @@ async function save() {
     await staffApi.quickStaff(form.value)
     toast.add({ severity: 'success', summary: `${positionLabel.value} cadastrado!` })
     form.value = { name: '', whatsApp: '', position: form.value.position }
-    await loadAll()
+    queryCache.invalidate('admin:staff')
+    queryCache.invalidate('admin:matches')
+    await refresh(false)
   } catch (e: unknown) {
     const err = e as { response?: { data?: { message?: string } } }
     toast.add({ severity: 'error', summary: 'Erro', detail: err.response?.data?.message })
@@ -78,6 +89,7 @@ async function save() {
 
 <template>
   <div class="page-container">
+    <RefreshIndicator :visible="refreshing" />
     <h1 class="page-title">Juízes & Goleiros</h1>
     <p class="page-subtitle">Cadastro rápido — nome, WhatsApp e posição</p>
 
@@ -95,7 +107,9 @@ async function save() {
       <Button label="Salvar" icon="pi pi-plus" class="save-btn" @click="save" />
     </div>
 
-    <DataTable :value="staff" stripedRows paginator :rows="10" class="mt">
+    <div v-if="loading" class="loading"><ProgressSpinner /></div>
+
+    <DataTable v-else :value="staff" stripedRows paginator :rows="10" class="mt">
       <Column field="name" header="Nome" />
       <Column header="WhatsApp">
         <template #body="{ data }">
@@ -126,6 +140,8 @@ async function save() {
 }
 
 .mt { margin-top: 1rem; }
+
+.loading { display: flex; justify-content: center; padding: 3rem; }
 
 .wa-link {
   color: #25d366;
